@@ -280,7 +280,7 @@ export default function DegustacaoPage() {
                         )}
                         {charuto.vitola && (
                           <p className="text-sm text-gray-600">
-                            <strong>Vitola:</strong> {charuto.vitola}
+                            <strong>bitola:</strong> {charuto.vitola}
                           </p>
                         )}
                         <p className="text-sm text-gray-600">
