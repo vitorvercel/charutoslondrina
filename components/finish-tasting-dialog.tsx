@@ -31,6 +31,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
   const [comprariaNovamente, setComprariaNovamente] = useState<string>("")
   const [observacoes, setObservacoes] = useState("")
   const [fotoAnilha, setFotoAnilha] = useState<string>("")
+  const [notas, setNotas] = useState("")
 
   const saboresDisponiveis = [
     "Tabaco",
@@ -61,6 +62,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
       comprariaNovamente,
       observacoes,
       fotoAnilha,
+      notas,
       dataFim: new Date().toISOString(),
     }
 
@@ -73,6 +75,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
     setComprariaNovamente("")
     setObservacoes("")
     setFotoAnilha("")
+    setNotas("")
     onClose()
   }
 
@@ -102,13 +105,13 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
 
           {/* Avaliação */}
           <div>
-            <Label htmlFor="avaliacao">Avaliação (0-10) *</Label>
+            <Label htmlFor="avaliacao">Avaliação (1-10) *</Label>
             <Select value={avaliacao.toString()} onValueChange={(value) => setAvaliacao(Number.parseInt(value))}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                   <SelectItem key={num} value={num.toString()}>
                     {num} -{" "}
                     {num <= 3 ? "Ruim" : num <= 5 ? "Regular" : num <= 7 ? "Bom" : num <= 9 ? "Muito Bom" : "Excelente"}
@@ -178,6 +181,18 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
                   reader.readAsDataURL(file)
                 }
               }}
+            />
+          </div>
+
+          {/* Notas Pessoais */}
+          <div>
+            <Label htmlFor="notas">Notas Pessoais</Label>
+            <Textarea
+              id="notas"
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              placeholder="Suas notas pessoais sobre a experiência..."
+              rows={3}
             />
           </div>
         </div>

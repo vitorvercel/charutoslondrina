@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Input } from "@/components/ui/input"
 
 interface Charuto {
   id: string
@@ -35,10 +36,11 @@ export function TastingDialog({ charuto, isOpen, onClose, onStartTasting }: Tast
   const [corte, setCorte] = useState<string>("")
   const [momento, setMomento] = useState<string>("")
   const [fluxo, setFluxo] = useState<string>("")
+  const [vitola, setVitola] = useState<string>("")
 
   const handleStartTasting = () => {
     if (!charuto || !corte || !momento || !fluxo) {
-      alert("Preencha todos os campos!")
+      alert("Preencha todos os campos obrigatórios!")
       return
     }
 
@@ -50,6 +52,7 @@ export function TastingDialog({ charuto, isOpen, onClose, onStartTasting }: Tast
       corte,
       momento,
       fluxo,
+      vitola,
       dataInicio: new Date().toISOString(),
       status: "em-degustacao",
     }
@@ -60,6 +63,7 @@ export function TastingDialog({ charuto, isOpen, onClose, onStartTasting }: Tast
     setCorte("")
     setMomento("")
     setFluxo("")
+    setVitola("")
     onClose()
   }
 
@@ -123,6 +127,17 @@ export function TastingDialog({ charuto, isOpen, onClose, onStartTasting }: Tast
                 <Label htmlFor="preso">Preso</Label>
               </div>
             </RadioGroup>
+          </div>
+
+          {/* Vitola */}
+          <div>
+            <Label className="text-base font-medium">Vitola (opcional)</Label>
+            <Input
+              placeholder="Ex: Robusto, Churchill, Corona..."
+              value={vitola}
+              onChange={(e) => setVitola(e.target.value)}
+              className="mt-2"
+            />
           </div>
         </div>
 

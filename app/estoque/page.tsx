@@ -21,6 +21,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { TastingDialog } from "@/components/tasting-dialog"
+import { supabase, estoqueService, degustacaoService, CharutoEstoque } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 interface Charuto {
   id: string
@@ -49,16 +51,53 @@ export default function EstoquePage() {
   const [selectedCharutoForTasting, setSelectedCharutoForTasting] = useState<Charuto | null>(null)
   const [isTastingDialogOpen, setIsTastingDialogOpen] = useState(false)
 
-  useEffect(() => {
-    const savedCharutos = localStorage.getItem("charutos-estoque")
-    if (savedCharutos) {
-      setCharutos(JSON.parse(savedCharutos))
-    }
-  }, [])
+  const { toast } = useToast()
 
   useEffect(() => {
-    localStorage.setItem("charutos-estoque", JSON.stringify(charutos))
-  }, [charutos])
+    const carregarEstoque = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        let itens = await estoqueService.getCharutos(user.id)
+
+        // Migração opcional do localStorage -> Supabase (uma vez)
+        try {
+          const savedCharutos = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
+          if ((itens?.length || 0) === 0 && savedCharutos.length > 0) {
+            for (const c of savedCharutos) {
+              await estoqueService.createCharuto({
+                user_id: user.id,
+                nome: c.nome,
+                marca: c.marca,
+                pais_origem: c.paisOrigem || undefined,
+                preco: c.preco || 0,
+                quantidade: c.quantidade || 0,
+                data_compra: c.dataCompra ? new Date(c.dataCompra).toISOString() : undefined,
+                foto: c.foto || undefined,
+              } as Omit<CharutoEstoque, 'id' | 'created_at' | 'updated_at'>)
+            }
+            localStorage.removeItem("charutos-estoque")
+            itens = await estoqueService.getCharutos(user.id)
+          }
+        } catch { }
+        // Mapear para o tipo da UI
+        const mapeados: Charuto[] = (itens || []).map((i) => ({
+          id: i.id,
+          nome: i.nome,
+          marca: i.marca,
+          paisOrigem: i.pais_origem || "",
+          preco: i.preco || 0,
+          quantidade: i.quantidade || 0,
+          dataCompra: i.data_compra ? i.data_compra.substring(0, 10) : "",
+          foto: i.foto || "",
+        }))
+        setCharutos(mapeados)
+      } catch (e) {
+        console.error('Erro ao carregar estoque:', e)
+      }
+    }
+    carregarEstoque()
+  }, [])
 
   const handleInputChange = (field: keyof Charuto, value: string | number) => {
     setFormData((prev) => ({
@@ -67,7 +106,7 @@ export default function EstoquePage() {
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.nome || !formData.marca) {
@@ -75,16 +114,61 @@ export default function EstoquePage() {
       return
     }
 
-    if (editingCharuto) {
-      setCharutos((prev) =>
-        prev.map((charuto) => (charuto.id === editingCharuto.id ? ({ ...charuto, ...formData } as Charuto) : charuto)),
-      )
-    } else {
-      const novoCharuto: Charuto = {
-        ...(formData as Charuto),
-        id: Date.now().toString(),
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        toast({ title: "Erro", description: "Usuário não autenticado", variant: "destructive" })
+        return
       }
-      setCharutos((prev) => [...prev, novoCharuto])
+
+      if (editingCharuto) {
+        const atualizado = await estoqueService.updateCharuto(editingCharuto.id, {
+          nome: formData.nome!,
+          marca: formData.marca!,
+          pais_origem: formData.paisOrigem || null as unknown as string | undefined,
+          preco: formData.preco,
+          quantidade: formData.quantidade ?? 0,
+          data_compra: formData.dataCompra ? new Date(formData.dataCompra).toISOString() : null as unknown as string | undefined,
+          foto: formData.foto,
+        } as Partial<CharutoEstoque>)
+
+        setCharutos((prev) => prev.map((c) => c.id === atualizado.id ? ({
+          id: atualizado.id,
+          nome: atualizado.nome,
+          marca: atualizado.marca,
+          paisOrigem: atualizado.pais_origem || "",
+          preco: atualizado.preco || 0,
+          quantidade: atualizado.quantidade || 0,
+          dataCompra: atualizado.data_compra ? atualizado.data_compra.substring(0, 10) : "",
+          foto: atualizado.foto || "",
+        }) : c))
+      } else {
+        const criado = await estoqueService.createCharuto({
+          user_id: user.id,
+          nome: formData.nome!,
+          marca: formData.marca!,
+          pais_origem: formData.paisOrigem || undefined,
+          preco: formData.preco || 0,
+          quantidade: formData.quantidade ?? 1,
+          data_compra: formData.dataCompra ? new Date(formData.dataCompra).toISOString() : undefined,
+          foto: formData.foto || undefined,
+        } as Omit<CharutoEstoque, 'id' | 'created_at' | 'updated_at'>)
+
+        setCharutos((prev) => [...prev, {
+          id: criado.id,
+          nome: criado.nome,
+          marca: criado.marca,
+          paisOrigem: criado.pais_origem || "",
+          preco: criado.preco || 0,
+          quantidade: criado.quantidade || 0,
+          dataCompra: criado.data_compra ? criado.data_compra.substring(0, 10) : "",
+          foto: criado.foto || "",
+        }])
+      }
+    } catch (err) {
+      console.error('Erro ao salvar charuto:', err)
+      toast({ title: "Erro", description: "Falha ao salvar charuto", variant: "destructive" })
+      return
     }
 
     setFormData({
@@ -106,9 +190,15 @@ export default function EstoquePage() {
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    if (confirm("Tem certeza que deseja excluir este charuto?")) {
+  const handleDelete = async (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir este charuto?")) return
+    try {
+      await estoqueService.deleteCharuto(id)
       setCharutos((prev) => prev.filter((charuto) => charuto.id !== id))
+      toast({ title: "Sucesso", description: "Charuto removido" })
+    } catch (err) {
+      console.error('Erro ao excluir charuto:', err)
+      toast({ title: "Erro", description: "Falha ao excluir charuto", variant: "destructive" })
     }
   }
 
@@ -122,26 +212,43 @@ export default function EstoquePage() {
     setIsTastingDialogOpen(true)
   }
 
-  const handleStartTasting = (tastingData: any) => {
+  const handleStartTasting = async (tastingData: any) => {
     if (!selectedCharutoForTasting) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        toast({ title: "Erro", description: "Usuário não autenticado", variant: "destructive" })
+        return
+      }
 
-    // Reduzir quantidade no estoque
-    setCharutos((prev) =>
-      prev.map((c) => (c.id === selectedCharutoForTasting.id ? { ...c, quantidade: c.quantidade - 1 } : c)),
-    )
+      // Decrementar estoque no Supabase
+      const atualizado = await estoqueService.decrementQuantidade(selectedCharutoForTasting.id, 1)
 
-    // Adicionar à degustação
-    const charutoDegustacao = {
-      id: Date.now().toString(),
-      ...tastingData,
+      // Criar degustação no Supabase
+      await degustacaoService.createDegustacao({
+        charuto_id: selectedCharutoForTasting.id,
+        nome: selectedCharutoForTasting.nome,
+        marca: selectedCharutoForTasting.marca,
+        pais_origem: selectedCharutoForTasting.paisOrigem || "",
+        data_inicio: new Date().toISOString(),
+        status: "em-degustacao",
+        user_id: user.id,
+        corte: tastingData.corte,
+        momento: tastingData.momento,
+        fluxo: tastingData.fluxo,
+        vitola: tastingData.vitola,
+      })
+
+      // Sincronizar UI do estoque
+      setCharutos((prev) => prev.map((c) => c.id === atualizado.id ? { ...c, quantidade: atualizado.quantidade } : c))
+
+      toast({ title: "Sucesso", description: "Degustação iniciada!" })
+      setSelectedCharutoForTasting(null)
+      setIsTastingDialogOpen(false)
+    } catch (err) {
+      console.error('Erro ao iniciar degustação:', err)
+      toast({ title: "Erro", description: "Falha ao iniciar degustação", variant: "destructive" })
     }
-
-    const savedTasting = localStorage.getItem("charutos-degustacao")
-    const tastingList = savedTasting ? JSON.parse(savedTasting) : []
-    localStorage.setItem("charutos-degustacao", JSON.stringify([...tastingList, charutoDegustacao]))
-
-    alert("Degustação iniciada!")
-    setSelectedCharutoForTasting(null)
   }
 
   return (
