@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { TastingDialog } from "@/components/tasting-dialog"
-import { supabase, degustacaoService, CharutoDegustacao } from "@/lib/supabase"
+import { supabase, degustacaoService, estoqueService, CharutoDegustacao } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 
 export default function DegustacaoPage() {
@@ -63,11 +63,23 @@ export default function DegustacaoPage() {
     }
   }
 
-  // Função para carregar charutos disponíveis do estoque
+  // Função para carregar charutos disponíveis do estoque (Supabase)
   const carregarCharutosDisponiveis = async () => {
     try {
-      const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
-      setCharutosDisponiveis(estoque.filter((c: any) => c.quantidade > 0))
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const estoque = await estoqueService.getCharutos(user.id)
+      const disponiveis = (estoque || []).filter((c) => (c.quantidade || 0) > 0).map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        marca: c.marca,
+        paisOrigem: c.pais_origem || "",
+        preco: c.preco || 0,
+        quantidade: c.quantidade || 0,
+        dataCompra: c.data_compra ? c.data_compra.substring(0, 10) : "",
+        foto: c.foto || "",
+      }))
+      setCharutosDisponiveis(disponiveis)
     } catch (error) {
       console.error('Erro ao carregar charutos disponíveis:', error)
     }
@@ -89,18 +101,24 @@ export default function DegustacaoPage() {
     if (!selectedCharuto) return
 
     try {
+      // Mapear campos para snake_case conforme schema do banco
+      const payload = {
+        sabores: finishData.sabores,
+        avaliacao: finishData.avaliacao,
+        duracao_fumo: finishData.duracaoFumo,
+        compraria_novamente: finishData.comprariaNovamente,
+        observacoes: finishData.observacoes,
+        foto_anilha: finishData.fotoAnilha,
+        notas: finishData.notas,
+      }
+
       // Finalizar no Supabase
-      const charutoFinalizado = await degustacaoService.finalizarDegustacao(selectedCharuto.id, finishData)
+      const charutoFinalizado = await degustacaoService.finalizarDegustacao(selectedCharuto.id, payload)
 
       // Atualizar estado local
       setCharutosDegustacao((prev) =>
         prev.map((c) => (c.id === selectedCharuto.id ? charutoFinalizado : c))
       )
-
-      // Adicionar ao histórico (ainda usando localStorage por enquanto)
-      const savedHistory = localStorage.getItem("charutos-historico")
-      const historyList = savedHistory ? JSON.parse(savedHistory) : []
-      localStorage.setItem("charutos-historico", JSON.stringify([...historyList, charutoFinalizado]))
 
       toast({
         title: "Sucesso",
@@ -177,12 +195,8 @@ export default function DegustacaoPage() {
         return
       }
 
-      // Reduzir quantidade no estoque
-      const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
-      const estoqueAtualizado = estoque.map((c: any) =>
-        c.id === selectedCharutoForTasting.id ? { ...c, quantidade: c.quantidade - 1 } : c,
-      )
-      localStorage.setItem("charutos-estoque", JSON.stringify(estoqueAtualizado))
+      // Reduzir quantidade no estoque (Supabase)
+      const atualizado = await estoqueService.decrementQuantidade(selectedCharutoForTasting.id, 1)
 
       // Criar nova degustação no Supabase
       const novaDegustacao = await degustacaoService.createDegustacao({
@@ -203,7 +217,7 @@ export default function DegustacaoPage() {
       setCharutosDegustacao((prev) => [...prev, novaDegustacao])
 
       // Atualizar charutos disponíveis
-      setCharutosDisponiveis(estoqueAtualizado.filter((c: any) => c.quantidade > 0))
+      setCharutosDisponiveis((prev) => prev.map((c: any) => c.id === atualizado.id ? { ...c, quantidade: atualizado.quantidade } : c).filter((c: any) => c.quantidade > 0))
 
       toast({
         title: "Sucesso",

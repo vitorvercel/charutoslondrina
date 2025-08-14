@@ -105,13 +105,13 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
 
           {/* Avaliação */}
           <div>
-            <Label htmlFor="avaliacao">Avaliação (0-10) *</Label>
+            <Label htmlFor="avaliacao">Avaliação (1-10) *</Label>
             <Select value={avaliacao.toString()} onValueChange={(value) => setAvaliacao(Number.parseInt(value))}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                   <SelectItem key={num} value={num.toString()}>
                     {num} -{" "}
                     {num <= 3 ? "Ruim" : num <= 5 ? "Regular" : num <= 7 ? "Bom" : num <= 9 ? "Muito Bom" : "Excelente"}

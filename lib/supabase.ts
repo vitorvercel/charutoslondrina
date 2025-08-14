@@ -13,6 +13,21 @@ export const supabase = createClientComponentClient({
   supabaseKey: supabaseAnonKey,
 })
 
+// Tipos para o estoque de charutos
+export interface CharutoEstoque {
+  id: string
+  user_id: string
+  nome: string
+  marca: string
+  pais_origem?: string
+  preco?: number
+  quantidade: number
+  data_compra?: string
+  foto?: string
+  created_at: string
+  updated_at: string
+}
+
 // Tipos para os produtos
 export interface Produto {
   id: number
@@ -74,6 +89,107 @@ export interface CharutoDegustacao {
 
   created_at: string
   updated_at: string
+}
+
+// Funções para gerenciar estoque de charutos
+export const estoqueService = {
+  async getCharutos(userId: string): Promise<CharutoEstoque[]> {
+    const { data, error } = await supabase
+      .from('estoque_charutos')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Erro ao buscar estoque:', error)
+      throw error
+    }
+
+    return data || []
+  },
+
+  async createCharuto(charuto: Omit<CharutoEstoque, 'id' | 'created_at' | 'updated_at'>): Promise<CharutoEstoque> {
+    const { data, error } = await supabase
+      .from('estoque_charutos')
+      .insert([charuto])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Erro ao criar charuto no estoque:', error)
+      throw error
+    }
+
+    return data
+  },
+
+  async updateCharuto(id: string, updates: Partial<CharutoEstoque>): Promise<CharutoEstoque> {
+    const { data, error } = await supabase
+      .from('estoque_charutos')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Erro ao atualizar charuto no estoque:', error)
+      throw error
+    }
+
+    return data
+  },
+
+  async deleteCharuto(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('estoque_charutos')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Erro ao excluir charuto no estoque:', error)
+      throw error
+    }
+  },
+
+  async decrementQuantidade(id: string, decremento: number = 1): Promise<CharutoEstoque> {
+    // Tenta usar função RPC para update atômico
+    const { data: rpcData, error: rpcError } = await supabase.rpc('decrement_estoque_charuto', {
+      p_charuto_id: id,
+      p_decremento: decremento,
+    })
+
+    if (!rpcError && rpcData) {
+      return rpcData as CharutoEstoque
+    }
+
+    // Fallback: ler e atualizar com verificação
+    const { data: atual, error: readError } = await supabase
+      .from('estoque_charutos')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (readError) {
+      console.error('Erro ao ler charuto para decrementar:', readError)
+      throw readError
+    }
+
+    const novaQuantidade = Math.max(0, (atual?.quantidade || 0) - decremento)
+
+    const { data: atualizado, error: updateError } = await supabase
+      .from('estoque_charutos')
+      .update({ quantidade: novaQuantidade, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Erro ao decrementar quantidade:', updateError)
+      throw updateError
+    }
+
+    return atualizado as CharutoEstoque
+  }
 }
 
 // Funções para gerenciar degustações

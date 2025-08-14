@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Package, Play, Star, Flame, Plus } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
+import { supabase, estoqueService, degustacaoService } from "@/lib/supabase"
 
 export default function Dashboard() {
   const router = useRouter()
@@ -19,53 +20,76 @@ export default function Dashboard() {
     charuteFavorito: "Nenhum",
   })
   const [recommendedCigars, setRecommendedCigars] = useState<any[]>([])
+  const [estoque, setEstoque] = useState<any[]>([])
+  const [historico, setHistorico] = useState<any[]>([])
 
   const flavors = ["Tabaco", "Pimenta", "Terroso", "Flores", "Café", "Frutas", "Chocolate", "Castanhas", "Madeira"]
 
   useEffect(() => {
-    // Carregar estatísticas do localStorage
-    const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
-    const historico = JSON.parse(localStorage.getItem("charutos-historico") || "[]")
+    // Carregar estatísticas do Supabase
+    const carregar = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const totalCharutos = estoque.reduce((acc: number, c: any) => acc + c.quantidade, 0)
-    const totalDegustacoes = historico.length
-    const avaliacaoMedia =
-      historico.length > 0
-        ? (historico.reduce((acc: number, h: any) => acc + h.avaliacao, 0) / historico.length).toFixed(1)
-        : "0.0"
+      const [itensEstoque, degustacoesFinalizadas] = await Promise.all([
+        estoqueService.getCharutos(user.id),
+        degustacaoService.getDegustacoesByStatus(user.id, "finalizado"),
+      ])
 
-    // Encontrar charuto favorito (mais bem avaliado)
-    let charuteFavorito = "Nenhum"
-    if (historico.length > 0) {
-      const melhorAvaliado = historico.reduce((prev: any, current: any) =>
-        prev.avaliacao > current.avaliacao ? prev : current,
-      )
-      charuteFavorito = melhorAvaliado.nome
+      const estoqueMap = (itensEstoque || []).map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        marca: c.marca,
+        paisOrigem: c.pais_origem || "",
+        quantidade: c.quantidade || 0,
+      }))
+      const historicoMap = (degustacoesFinalizadas || []).map((d: any) => ({
+        id: d.id,
+        nome: d.nome,
+        marca: d.marca,
+        pais_origem: d.pais_origem || "",
+        avaliacao: d.avaliacao || 0,
+        sabores: d.sabores || [],
+      }))
+
+      setEstoque(estoqueMap)
+      setHistorico(historicoMap)
+
+      const totalCharutos = estoqueMap.reduce((acc: number, c: any) => acc + (c.quantidade || 0), 0)
+      const totalDegustacoes = historicoMap.length
+      const avaliacaoMedia =
+        historicoMap.length > 0
+          ? (historicoMap.reduce((acc: number, h: any) => acc + (h.avaliacao || 0), 0) / historicoMap.length).toFixed(1)
+          : "0.0"
+
+      let charuteFavorito = "Nenhum"
+      if (historicoMap.length > 0) {
+        const melhorAvaliado = historicoMap.reduce((prev: any, current: any) =>
+          (prev.avaliacao || 0) > (current.avaliacao || 0) ? prev : current,
+        )
+        charuteFavorito = melhorAvaliado.nome
+      }
+
+      setStats({ totalCharutos, totalDegustacoes, avaliacaoMedia, charuteFavorito })
     }
-
-    setStats({
-      totalCharutos,
-      totalDegustacoes,
-      avaliacaoMedia,
-      charuteFavorito,
-    })
+    carregar()
   }, [])
 
   useEffect(() => {
-    // Sistema de recomendação melhorado baseado no histórico
+    // Sistema de recomendação baseado em dados do Supabase (em memória)
     if (selectedFlavors.length > 0) {
-      const historico = JSON.parse(localStorage.getItem("charutos-historico") || "[]")
-      const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
+      const historicoLocal = historico
+      const estoqueLocal = estoque
 
       // Encontrar charutos do histórico que têm os sabores selecionados
-      const charutosComSaboresSimilares = historico.filter((h: any) => {
+      const charutosComSaboresSimilares = historicoLocal.filter((h: any) => {
         if (!h.sabores || !Array.isArray(h.sabores)) return false
         return h.sabores.some((sabor: string) => selectedFlavors.includes(sabor))
       })
 
       // Se encontrou charutos no histórico com sabores similares, recomendar do estoque
       if (charutosComSaboresSimilares.length > 0) {
-        const recomendacoes = estoque
+        const recomendacoes = estoqueLocal
           .filter((c: any) => c.quantidade > 0)
           .map((c: any) => {
             // Calcular score baseado em quantas vezes charutos similares foram bem avaliados
@@ -107,7 +131,7 @@ export default function Dashboard() {
         setRecommendedCigars(recomendacoes)
       } else {
         // Se não encontrou no histórico, mostrar charutos do estoque que podem ter os sabores
-        const recomendacoesFallback = estoque
+        const recomendacoesFallback = estoqueLocal
           .filter((c: any) => c.quantidade > 0)
           .filter((c: any) => {
             const nomeCompleto = `${c.nome} ${c.marca} ${c.paisOrigem || ""}`.toLowerCase()
@@ -293,11 +317,10 @@ export default function Dashboard() {
                         <button
                           key={flavor}
                           onClick={() => toggleFlavor(flavor)}
-                          className={`p-2 text-xs rounded-md border transition-colors ${
-                            selectedFlavors.includes(flavor)
-                              ? "bg-orange-100 border-orange-300 text-orange-800"
-                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                          }`}
+                          className={`p-2 text-xs rounded-md border transition-colors ${selectedFlavors.includes(flavor)
+                            ? "bg-orange-100 border-orange-300 text-orange-800"
+                            : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                            }`}
                         >
                           {flavor}
                         </button>

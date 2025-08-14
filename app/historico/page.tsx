@@ -9,22 +9,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Clock, Star, Flame, Search, Eye } from "lucide-react"
+import { supabase, degustacaoService, CharutoDegustacao } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 interface HistoricoItem {
   id: string
   nome: string
   marca: string
-  paisOrigem: string
+  pais_origem: string
   avaliacao: number
-  duracaoFumo: number
-  dataFim: string
+  duracao_fumo: number
+  data_fim: string
   sabores: string[]
   observacoes: string
-  comprariaNovamente: string
+  compraria_novamente: string
   corte?: string
   momento?: string
   fluxo?: string
-  fotoAnilha?: string
+  foto_anilha?: string
+  notas?: string
+  vitola?: string
 }
 
 export default function HistoricoPage() {
@@ -33,20 +37,72 @@ export default function HistoricoPage() {
   const [filtroAvaliacao, setFiltroAvaliacao] = useState("todas")
   const [selectedCharuto, setSelectedCharuto] = useState<HistoricoItem | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  const { toast } = useToast()
+
+  // Função para carregar histórico do Supabase
+  const carregarHistorico = async () => {
+    try {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado",
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Buscar apenas degustações finalizadas
+      const degustacoes = await degustacaoService.getDegustacoesByStatus(user.id, "finalizado")
+
+      // Converter para o formato esperado pela interface
+      const historicoFormatado = degustacoes.map((degustacao): HistoricoItem => ({
+        id: degustacao.id,
+        nome: degustacao.nome,
+        marca: degustacao.marca,
+        pais_origem: degustacao.pais_origem || "",
+        avaliacao: degustacao.avaliacao || 0,
+        duracao_fumo: degustacao.duracao_fumo || 0,
+        data_fim: degustacao.data_fim || "",
+        sabores: degustacao.sabores || [],
+        observacoes: degustacao.observacoes || "",
+        compraria_novamente: degustacao.compraria_novamente || "",
+        corte: degustacao.corte,
+        momento: degustacao.momento,
+        fluxo: degustacao.fluxo,
+        foto_anilha: degustacao.foto_anilha,
+        notas: degustacao.notas,
+        vitola: degustacao.vitola
+      }))
+
+      setHistorico(historicoFormatado)
+    } catch (error) {
+      console.error('Erro ao carregar histórico:', error)
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar histórico de degustações",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem("charutos-historico")
-    if (savedHistory) {
-      setHistorico(JSON.parse(savedHistory))
-    }
+    carregarHistorico()
   }, [])
 
   const historicoFiltrado = historico.filter((item) => {
     const matchTexto =
       item.nome.toLowerCase().includes(filtroTexto.toLowerCase()) ||
       item.marca.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-      item.paisOrigem.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-      item.observacoes.toLowerCase().includes(filtroTexto.toLowerCase())
+      item.pais_origem.toLowerCase().includes(filtroTexto.toLowerCase()) ||
+      item.observacoes.toLowerCase().includes(filtroTexto.toLowerCase()) ||
+      (item.notas && item.notas.toLowerCase().includes(filtroTexto.toLowerCase()))
 
     const matchAvaliacao =
       filtroAvaliacao === "todas" ||
@@ -61,7 +117,7 @@ export default function HistoricoPage() {
 
   const totalDegustacoes = historico.length
   const tempoMedio =
-    historico.length > 0 ? Math.round(historico.reduce((acc, h) => acc + h.duracaoFumo, 0) / historico.length) : 0
+    historico.length > 0 ? Math.round(historico.reduce((acc, h) => acc + h.duracao_fumo, 0) / historico.length) : 0
   const avaliacaoMedia =
     historico.length > 0 ? (historico.reduce((acc, h) => acc + h.avaliacao, 0) / historico.length).toFixed(1) : "0.0"
   const melhorAvaliacao = historico.length > 0 ? Math.max(...historico.map((h) => h.avaliacao)) : 0
@@ -69,6 +125,20 @@ export default function HistoricoPage() {
   const openModal = (charuto: HistoricoItem) => {
     setSelectedCharuto(charuto)
     setIsModalOpen(true)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-orange-50">
+        <Navigation />
+        <div className="container mx-auto px-6 py-8">
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Carregando histórico...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -150,7 +220,7 @@ export default function HistoricoPage() {
                 <div className="relative">
                   <Input
                     type="text"
-                    placeholder="Buscar por nome, marca, origem ou notas..."
+                    placeholder="Buscar por nome, marca, origem, observações ou notas..."
                     value={filtroTexto}
                     onChange={(e) => setFiltroTexto(e.target.value)}
                     className="pl-10"
@@ -218,16 +288,16 @@ export default function HistoricoPage() {
                     <CardContent className="pt-0">
                       <div className="space-y-2 mb-4">
                         <p className="text-sm text-gray-600">
-                          <strong>Data:</strong> {new Date(item.dataFim).toLocaleDateString("pt-BR")}
+                          <strong>Data:</strong> {new Date(item.data_fim).toLocaleDateString("pt-BR")}
                         </p>
                         <p className="text-sm text-gray-600">
-                          <strong>Tempo:</strong> {item.duracaoFumo} min
+                          <strong>Tempo:</strong> {item.duracao_fumo} min
                         </p>
                         <p className="text-sm text-gray-600">
                           <strong>Compraria novamente:</strong>{" "}
-                          {item.comprariaNovamente === "sim"
+                          {item.compraria_novamente === "sim"
                             ? "Sim"
-                            : item.comprariaNovamente === "nao"
+                            : item.compraria_novamente === "nao"
                               ? "Não"
                               : "Depende"}
                         </p>
@@ -250,7 +320,7 @@ export default function HistoricoPage() {
             <DialogHeader>
               <DialogTitle className="text-xl font-bold">{selectedCharuto?.nome}</DialogTitle>
               <DialogDescription className="text-gray-600">
-                {selectedCharuto?.marca} - {selectedCharuto?.paisOrigem}
+                {selectedCharuto?.marca} - {selectedCharuto?.pais_origem}
               </DialogDescription>
             </DialogHeader>
 
@@ -268,20 +338,20 @@ export default function HistoricoPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Duração</p>
-                    <p className="text-lg font-semibold">{selectedCharuto.duracaoFumo} minutos</p>
+                    <p className="text-lg font-semibold">{selectedCharuto.duracao_fumo} minutos</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Data da Degustação</p>
                     <p className="text-lg font-semibold">
-                      {new Date(selectedCharuto.dataFim).toLocaleDateString("pt-BR")}
+                      {new Date(selectedCharuto.data_fim).toLocaleDateString("pt-BR")}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700">Compraria Novamente</p>
                     <p className="text-lg font-semibold">
-                      {selectedCharuto.comprariaNovamente === "sim"
+                      {selectedCharuto.compraria_novamente === "sim"
                         ? "Sim"
-                        : selectedCharuto.comprariaNovamente === "nao"
+                        : selectedCharuto.compraria_novamente === "nao"
                           ? "Não"
                           : "Depende do Preço"}
                     </p>
@@ -289,10 +359,10 @@ export default function HistoricoPage() {
                 </div>
 
                 {/* Detalhes da Degustação */}
-                {(selectedCharuto.corte || selectedCharuto.momento || selectedCharuto.fluxo) && (
+                {(selectedCharuto.corte || selectedCharuto.momento || selectedCharuto.fluxo || selectedCharuto.vitola) && (
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-3">Detalhes da Degustação</h3>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       {selectedCharuto.corte && (
                         <div>
                           <p className="text-sm font-medium text-gray-700">Tipo de Corte</p>
@@ -309,6 +379,12 @@ export default function HistoricoPage() {
                         <div>
                           <p className="text-sm font-medium text-gray-700">Fluxo</p>
                           <p className="text-base capitalize">{selectedCharuto.fluxo}</p>
+                        </div>
+                      )}
+                      {selectedCharuto.vitola && (
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Vitola</p>
+                          <p className="text-base capitalize">{selectedCharuto.vitola}</p>
                         </div>
                       )}
                     </div>
@@ -339,12 +415,22 @@ export default function HistoricoPage() {
                   </div>
                 )}
 
+                {/* Notas Pessoais */}
+                {selectedCharuto.notas && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Notas Pessoais</h3>
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-gray-700">{selectedCharuto.notas}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Foto da Anilha */}
-                {selectedCharuto.fotoAnilha && (
+                {selectedCharuto.foto_anilha && (
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-3">Foto da Anilha</h3>
                     <img
-                      src={selectedCharuto.fotoAnilha || "/placeholder.svg"}
+                      src={selectedCharuto.foto_anilha || "/placeholder.svg"}
                       alt="Anilha do charuto"
                       className="max-w-full h-auto rounded-lg border"
                     />
