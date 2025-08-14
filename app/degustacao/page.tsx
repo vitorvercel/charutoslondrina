@@ -16,30 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { TastingDialog } from "@/components/tasting-dialog"
-
-interface CharutoDegustacao {
-  id: string
-  charuteId: string
-  nome: string
-  marca: string
-  paisOrigem: string
-  dataInicio: string
-  dataFim?: string
-  status: "em-degustacao" | "finalizado"
-
-  // Dados da etapa 2 (início da degustação)
-  corte?: string
-  momento?: string
-  fluxo?: string
-
-  // Dados da etapa 3 (finalização)
-  sabores?: string[]
-  avaliacao?: number
-  duracaoFumo?: number
-  comprariaNovamente?: string
-  observacoes?: string
-  fotoAnilha?: string
-}
+import { supabase, degustacaoService, CharutoDegustacao } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 export default function DegustacaoPage() {
   const [charutosDegustacao, setCharutosDegustacao] = useState<CharutoDegustacao[]>([])
@@ -47,26 +25,58 @@ export default function DegustacaoPage() {
   const [isFinishDialogOpen, setIsFinishDialogOpen] = useState(false)
   const [notas, setNotas] = useState("")
   const [avaliacao, setAvaliacao] = useState<number>(5)
+  const [loading, setLoading] = useState(true)
 
   const [isStartTastingDialogOpen, setIsStartTastingDialogOpen] = useState(false)
   const [charutosDisponiveis, setCharutosDisponiveis] = useState<any[]>([])
   const [selectedCharutoForTasting, setSelectedCharutoForTasting] = useState<any>(null)
   const [isTastingDialogOpen, setIsTastingDialogOpen] = useState(false)
 
-  useEffect(() => {
-    const savedTasting = localStorage.getItem("charutos-degustacao")
-    if (savedTasting) {
-      setCharutosDegustacao(JSON.parse(savedTasting))
+  const { toast } = useToast()
+
+  // Função para carregar degustações do Supabase
+  const carregarDegustacoes = async () => {
+    try {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado",
+          variant: "destructive"
+        })
+        return
+      }
+
+      const degustacoes = await degustacaoService.getDegustacoes(user.id)
+      setCharutosDegustacao(degustacoes)
+    } catch (error) {
+      console.error('Erro ao carregar degustações:', error)
+      toast({
+        title: "Erro",
+        description: "Falha ao carregar degustações",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
     }
+  }
 
-    // Carregar charutos disponíveis
-    const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
-    setCharutosDisponiveis(estoque.filter((c: any) => c.quantidade > 0))
-  }, [])
+  // Função para carregar charutos disponíveis do estoque
+  const carregarCharutosDisponiveis = async () => {
+    try {
+      const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
+      setCharutosDisponiveis(estoque.filter((c: any) => c.quantidade > 0))
+    } catch (error) {
+      console.error('Erro ao carregar charutos disponíveis:', error)
+    }
+  }
 
   useEffect(() => {
-    localStorage.setItem("charutos-degustacao", JSON.stringify(charutosDegustacao))
-  }, [charutosDegustacao])
+    carregarDegustacoes()
+    carregarCharutosDisponiveis()
+  }, [])
 
   const finalizarDegustacao = (charuto: CharutoDegustacao) => {
     setSelectedCharuto(charuto)
@@ -75,27 +85,57 @@ export default function DegustacaoPage() {
     setIsFinishDialogOpen(true)
   }
 
-  const handleFinalizarDegustacao = (finishData: any) => {
+  const handleFinalizarDegustacao = async (finishData: any) => {
     if (!selectedCharuto) return
 
-    const charutoFinalizado: CharutoDegustacao = {
-      ...selectedCharuto,
-      status: "finalizado",
-      ...finishData,
+    try {
+      // Finalizar no Supabase
+      const charutoFinalizado = await degustacaoService.finalizarDegustacao(selectedCharuto.id, finishData)
+
+      // Atualizar estado local
+      setCharutosDegustacao((prev) =>
+        prev.map((c) => (c.id === selectedCharuto.id ? charutoFinalizado : c))
+      )
+
+      // Adicionar ao histórico (ainda usando localStorage por enquanto)
+      const savedHistory = localStorage.getItem("charutos-historico")
+      const historyList = savedHistory ? JSON.parse(savedHistory) : []
+      localStorage.setItem("charutos-historico", JSON.stringify([...historyList, charutoFinalizado]))
+
+      toast({
+        title: "Sucesso",
+        description: "Degustação finalizada com sucesso!",
+      })
+
+      setSelectedCharuto(null)
+    } catch (error) {
+      console.error('Erro ao finalizar degustação:', error)
+      toast({
+        title: "Erro",
+        description: "Falha ao finalizar degustação",
+        variant: "destructive"
+      })
     }
-
-    setCharutosDegustacao((prev) => prev.map((c) => (c.id === selectedCharuto.id ? charutoFinalizado : c)))
-
-    const savedHistory = localStorage.getItem("charutos-historico")
-    const historyList = savedHistory ? JSON.parse(savedHistory) : []
-    localStorage.setItem("charutos-historico", JSON.stringify([...historyList, charutoFinalizado]))
-
-    setSelectedCharuto(null)
   }
 
-  const removerDaDegustacao = (id: string) => {
+  const removerDaDegustacao = async (id: string) => {
     if (confirm("Tem certeza que deseja remover este charuto da degustação?")) {
-      setCharutosDegustacao((prev) => prev.filter((c) => c.id !== id))
+      try {
+        await degustacaoService.deleteDegustacao(id)
+        setCharutosDegustacao((prev) => prev.filter((c) => c.id !== id))
+
+        toast({
+          title: "Sucesso",
+          description: "Charuto removido da degustação",
+        })
+      } catch (error) {
+        console.error('Erro ao remover degustação:', error)
+        toast({
+          title: "Erro",
+          description: "Falha ao remover degustação",
+          variant: "destructive"
+        })
+      }
     }
   }
 
@@ -122,30 +162,77 @@ export default function DegustacaoPage() {
     setIsTastingDialogOpen(true)
   }
 
-  const handleStartTasting = (tastingData: any) => {
+  const handleStartTasting = async (tastingData: any) => {
     if (!selectedCharutoForTasting) return
 
-    // Reduzir quantidade no estoque
-    const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
-    const estoqueAtualizado = estoque.map((c: any) =>
-      c.id === selectedCharutoForTasting.id ? { ...c, quantidade: c.quantidade - 1 } : c,
-    )
-    localStorage.setItem("charutos-estoque", JSON.stringify(estoqueAtualizado))
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    // Adicionar à degustação
-    const charutoDegustacao = {
-      id: Date.now().toString(),
-      ...tastingData,
+      if (!user) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado",
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Reduzir quantidade no estoque
+      const estoque = JSON.parse(localStorage.getItem("charutos-estoque") || "[]")
+      const estoqueAtualizado = estoque.map((c: any) =>
+        c.id === selectedCharutoForTasting.id ? { ...c, quantidade: c.quantidade - 1 } : c,
+      )
+      localStorage.setItem("charutos-estoque", JSON.stringify(estoqueAtualizado))
+
+      // Criar nova degustação no Supabase
+      const novaDegustacao = await degustacaoService.createDegustacao({
+        charuto_id: selectedCharutoForTasting.id,
+        nome: selectedCharutoForTasting.nome,
+        marca: selectedCharutoForTasting.marca,
+        pais_origem: selectedCharutoForTasting.paisOrigem || selectedCharutoForTasting.origem || "",
+        data_inicio: new Date().toISOString(),
+        status: "em-degustacao",
+        user_id: user.id,
+        corte: tastingData.corte,
+        momento: tastingData.momento,
+        fluxo: tastingData.fluxo,
+        vitola: tastingData.vitola
+      })
+
+      // Atualizar estado local
+      setCharutosDegustacao((prev) => [...prev, novaDegustacao])
+
+      // Atualizar charutos disponíveis
+      setCharutosDisponiveis(estoqueAtualizado.filter((c: any) => c.quantidade > 0))
+
+      toast({
+        title: "Sucesso",
+        description: "Degustação iniciada com sucesso!",
+      })
+
+      setSelectedCharutoForTasting(null)
+    } catch (error) {
+      console.error('Erro ao iniciar degustação:', error)
+      toast({
+        title: "Erro",
+        description: "Falha ao iniciar degustação",
+        variant: "destructive"
+      })
     }
+  }
 
-    const savedTasting = localStorage.getItem("charutos-degustacao")
-    const tastingList = savedTasting ? JSON.parse(savedTasting) : []
-    const updatedTasting = [...tastingList, charutoDegustacao]
-    localStorage.setItem("charutos-degustacao", JSON.stringify(updatedTasting))
-    setCharutosDegustacao(updatedTasting)
-
-    alert("Degustação iniciada!")
-    setSelectedCharutoForTasting(null)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-orange-50">
+        <Navigation />
+        <div className="container mx-auto px-6 py-8">
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Carregando degustações...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -195,9 +282,9 @@ export default function DegustacaoPage() {
                   <p className="text-3xl font-bold text-gray-900">
                     {charutosFinalizados.length > 0
                       ? Math.round(
-                          charutosFinalizados.reduce((acc, c) => acc + (c.duracaoFumo || 0), 0) /
-                            charutosFinalizados.length,
-                        )
+                        charutosFinalizados.reduce((acc, c) => acc + (c.duracao_fumo || 0), 0) /
+                        charutosFinalizados.length,
+                      )
                       : 0}
                   </p>
                   <p className="text-xs text-gray-500">Minutos</p>
@@ -215,9 +302,9 @@ export default function DegustacaoPage() {
                   <p className="text-3xl font-bold text-gray-900">
                     {charutosFinalizados.length > 0
                       ? (
-                          charutosFinalizados.reduce((acc, c) => acc + (c.avaliacao || 0), 0) /
-                          charutosFinalizados.length
-                        ).toFixed(1)
+                        charutosFinalizados.reduce((acc, c) => acc + (c.avaliacao || 0), 0) /
+                        charutosFinalizados.length
+                      ).toFixed(1)
                       : "0.0"}
                   </p>
                   <p className="text-xs text-gray-500">De 10</p>
@@ -267,15 +354,15 @@ export default function DegustacaoPage() {
                         </div>
                         <Badge className="bg-orange-100 text-orange-800 border-orange-200">
                           <Clock className="w-3 h-3 mr-1" />
-                          {formatarTempo(charuto.dataInicio)}
+                          {formatarTempo(charuto.data_inicio)}
                         </Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="pt-0">
                       <div className="space-y-2 mb-4">
-                        {charuto.paisOrigem && (
+                        {charuto.pais_origem && (
                           <p className="text-sm text-gray-600">
-                            <strong>Origem:</strong> {charuto.paisOrigem}
+                            <strong>Origem:</strong> {charuto.pais_origem}
                           </p>
                         )}
                         {charuto.vitola && (
@@ -284,7 +371,7 @@ export default function DegustacaoPage() {
                           </p>
                         )}
                         <p className="text-sm text-gray-600">
-                          <strong>Iniciado:</strong> {new Date(charuto.dataInicio).toLocaleString("pt-BR")}
+                          <strong>Iniciado:</strong> {new Date(charuto.data_inicio).toLocaleString("pt-BR")}
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -332,11 +419,11 @@ export default function DegustacaoPage() {
                     <CardContent className="pt-0">
                       <div className="space-y-2">
                         <p className="text-sm text-gray-600">
-                          <strong>Tempo fumado:</strong> {charuto.duracaoFumo} min
+                          <strong>Tempo fumado:</strong> {charuto.duracao_fumo} min
                         </p>
                         <p className="text-sm text-gray-600">
                           <strong>Finalizado:</strong>{" "}
-                          {charuto.dataFim ? new Date(charuto.dataFim).toLocaleString("pt-BR") : "N/A"}
+                          {charuto.data_fim ? new Date(charuto.data_fim).toLocaleString("pt-BR") : "N/A"}
                         </p>
                         {charuto.observacoes && (
                           <p className="text-sm text-gray-600">

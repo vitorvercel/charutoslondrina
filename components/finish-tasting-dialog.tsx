@@ -31,6 +31,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
   const [comprariaNovamente, setComprariaNovamente] = useState<string>("")
   const [observacoes, setObservacoes] = useState("")
   const [fotoAnilha, setFotoAnilha] = useState<string>("")
+  const [notas, setNotas] = useState("")
 
   const saboresDisponiveis = [
     "Tabaco",
@@ -61,6 +62,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
       comprariaNovamente,
       observacoes,
       fotoAnilha,
+      notas,
       dataFim: new Date().toISOString(),
     }
 
@@ -73,6 +75,7 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
     setComprariaNovamente("")
     setObservacoes("")
     setFotoAnilha("")
+    setNotas("")
     onClose()
   }
 
@@ -178,6 +181,18 @@ export function FinishTastingDialog({ charuto, isOpen, onClose, onFinish }: Fini
                   reader.readAsDataURL(file)
                 }
               }}
+            />
+          </div>
+
+          {/* Notas Pessoais */}
+          <div>
+            <Label htmlFor="notas">Notas Pessoais</Label>
+            <Textarea
+              id="notas"
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              placeholder="Suas notas pessoais sobre a experiência..."
+              rows={3}
             />
           </div>
         </div>

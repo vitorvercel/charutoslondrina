@@ -1,0 +1,11 @@
+# Supabase Configuration
+# Copie este arquivo para .env.local e preencha com suas credenciais
+
+NEXT_PUBLIC_SUPABASE_URL=sua_url_do_supabase_aqui
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anonima_do_supabase_aqui
+
+# Exemplo de como obter essas credenciais:
+# 1. Acesse o dashboard do Supabase (supabase.com)
+# 2. Selecione seu projeto
+# 3. Vá em Settings > API
+# 4. Copie a URL e a anon key
